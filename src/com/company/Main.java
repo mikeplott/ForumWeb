@@ -1,6 +1,7 @@
 package com.company;
 
 import spark.ModelAndView;
+import spark.Session;
 import spark.Spark;
 import spark.template.mustache.MustacheTemplateEngine;
 import java.util.ArrayList;
@@ -23,17 +24,63 @@ public class Main {
         Spark.get(
                 "/",
                 (request, response) -> {
+                    String replyId = request.queryParams("replyId");
+                    int replyIdNum = -1;
+                    if (replyId != null) {
+                        replyIdNum = Integer.valueOf(replyId);
+                    }
+
+                    Session session = request.session();
+                    String name = session.attribute("loginName");
+
                     HashMap m = new HashMap();
                     ArrayList<Message> msgs = new ArrayList<Message>();
                     for (Message message : messages) {
-                        if (message.replyId == -1) {
+                        if (message.replyId == replyIdNum) {
                             msgs.add(message);
                         }
                     }
                     m.put("messages", msgs);
+                    m.put("name", name);
+                    m.put("replyId", replyIdNum);
                     return new ModelAndView(m, "home.html");
                 },
                 new MustacheTemplateEngine()
+        );
+
+        Spark.post(
+                "/login",
+                (request, response) -> {
+                    String name = request.queryParams("loginName");
+                    String pass = request.queryParams("password");
+                    User user = users.get(name);
+                    if (user == null) {
+                        user = new User(name, pass);
+                        users.put(name, user);
+                    }
+                    else if (!pass.equals(user.password)) {
+                        Spark.halt(403);
+                        return null;
+                    }
+                    Session session = request.session();
+                    session.attribute("loginName", name);
+                    response.redirect("/");
+                    return null;
+                }
+        );
+
+        Spark.post(
+                "/create-message",
+                (request, response) -> {
+                    String text = request.queryParams("text");
+                    int repId = Integer.parseInt(request.queryParams("replyId"));
+                    Session session = request.session();
+                    String name = session.attribute("loginName");
+                    Message message = new Message(messages.size(), repId, name, text);
+                    messages.add(message);
+                    response.redirect("/");
+                    return null;
+                }
         );
     }
 }
