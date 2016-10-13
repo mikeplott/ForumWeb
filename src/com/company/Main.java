@@ -4,12 +4,74 @@ import spark.ModelAndView;
 import spark.Session;
 import spark.Spark;
 import spark.template.mustache.MustacheTemplateEngine;
+
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 
 public class Main {
     static HashMap<String, User> users = new HashMap<>();
     static ArrayList<Message> messages = new ArrayList<>();
+
+    public static void createTables(Connection conn) throws SQLException {
+        Statement stmt = conn.createStatement();
+        stmt.execute("CREATE TABLE IF NOT EXISTS users (id IDENTITY, name VARCHAR, password VARCHAR)");
+        stmt.execute("CREATE TABLE IF NOT EXISTS messages (id IDENTITY, reply_id INT, text VARCHAR, user_id INT)");
+    }
+
+    public static void insertUser(Connection conn, String name, String password) throws SQLException {
+        PreparedStatement stmt = conn.prepareStatement("INSERT INTO users VALUES(NULL, ?, ?)");
+        stmt.setString(1, name);
+        stmt.setString(2, password);
+        stmt.execute();
+    }
+
+    public static User selectUser(Connection conn, String name) throws SQLException {
+        PreparedStatement stmt = conn.prepareStatement("SELECT * FROM users WHERE name = ?");
+        stmt.setString(1, name);
+        ResultSet results = stmt.executeQuery();
+        if (results.next()) {
+            int id = results.getInt("id");
+            String password = results.getString("password");
+            return new User(id, name, password);
+        }
+        return null;
+    }
+
+    public static void insertMessage(Connection conn, int replyId, String text, int userId) throws SQLException {
+        PreparedStatement stmt = conn.prepareStatement("INSERT INTO messages VALUES (NULL, ?, ?, ?)");
+        stmt.setInt(1, replyId);
+        stmt.setString(2, text);
+        stmt.setInt(3, userId);
+        stmt.execute();
+    }
+
+    public static Message selectMessage(Connection conn, int id) throws SQLException {
+        PreparedStatement stmt = conn.prepareStatement("SELECT * FROM messages INNER JOIN users ON messages.user_id = users.id WHERE messages.id = ?");
+        stmt.setInt(1, id);
+        ResultSet results = stmt.executeQuery();
+        if (results.next()) {
+            int replyId = results.getInt("messages.reply_id");
+            String text = results.getString("messages.text");
+            String author = results.getString("users.name");
+            return new Message(id, replyId, author, text);
+        }
+        return null;
+    }
+
+    public static ArrayList<Message> selectReplies(Connection conn, int replyId) throws SQLException {
+        ArrayList<Message> replies = new ArrayList<>();
+        PreparedStatement stmt = conn.prepareStatement("SELECT * FROM messages INNER JOIN users ON messages.user_id = users.id WHERE messages.reply_id = ?");
+        stmt.setInt(1, replyId);
+        ResultSet results = stmt.executeQuery();
+        while(results.next()) {
+            int id = results.getInt("messages.id");
+            String author = results.getString("users.name");
+            String text = results.getString("messages.text");
+            replies.add(new Message(id, replyId, author, text));
+        }
+        return replies;
+    }
 
     public static void main(String[] args) {
         users.put("Alice", new User("Alice", "pass"));
@@ -78,7 +140,7 @@ public class Main {
                     String name = session.attribute("loginName");
                     Message message = new Message(messages.size(), repId, name, text);
                     messages.add(message);
-                    response.redirect("/");
+                    response.redirect(request.headers("Referer"));
                     return null;
                 }
         );
